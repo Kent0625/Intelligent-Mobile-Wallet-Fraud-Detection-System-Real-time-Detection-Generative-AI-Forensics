@@ -1,0 +1,18 @@
+# Data
+data/
+*.csv
+*.zip
+
+# Python
+__pycache__/
+*.pyc
+
+# Environment
+.env
+
+# Models (Optional: models are large, usually ignored, but we'll keep small ones if <100MB)
+# fraud_detector.pkl might be large, checking... 
+# If >100MB, we should ignore. For now, let's keep it unless it fails.
+
+# OS
+.DS_Store

@@ -1,0 +1,10 @@
+kaggle
+pandas
+numpy
+scikit-learn
+streamlit
+google-generativeai
+python-dotenv
+matplotlib
+seaborn
+plotly
