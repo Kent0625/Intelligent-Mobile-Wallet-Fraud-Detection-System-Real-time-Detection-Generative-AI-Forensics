@@ -45,8 +45,8 @@ def test_pipeline_preprocess(mock_data):
     # Check if dropped column is gone
     assert 'is_flagged_fraud' not in processed_df.columns
 
-def test_feature_engineering(mock_data):
-    """Test feature creation and encoding."""
+def test_feature_creation(mock_data):
+    """Test feature creation (before encoding)."""
     pipeline = DataPipeline()
     engineer = FeatureEngineer()
     
@@ -56,13 +56,68 @@ def test_feature_engineering(mock_data):
     # Check for new features
     assert 'error_balance_orig' in features_df.columns
     assert 'error_balance_dest' in features_df.columns
+    assert 'hour_of_day' in features_df.columns
     
-    # Check one-hot encoding
-    # We expect type_PAYMENT, type_TRANSFER, type_CASH_OUT (minus one if drop_first=True)
-    # Since we have 3 types, drop_first=True means 2 dummy columns if all present, 
-    # but pandas get_dummies depends on input.
-    # Just check if 'type' column is gone
-    assert 'type' not in features_df.columns
+    # Check type is STILL there (not encoded yet)
+    assert 'type' in features_df.columns
+
+def test_feature_transformation(mock_data):
+    """Test full transformation (encoding + scaling)."""
+    pipeline = DataPipeline()
+    engineer = FeatureEngineer()
+    
+    processed_df = pipeline.preprocess(mock_data)
+    features_df = engineer.create_features(processed_df)
+    X = engineer.select_features(features_df)
+    
+    # Fit and Transform
+    X_transformed = engineer.fit_transform(X)
+    
+    # Check output format
+    assert isinstance(X_transformed, pd.DataFrame)
+    
+    # Check if encoded columns exist (OneHotEncoder should create type_PAYMENT etc.)
+    # Note: Column names might vary depending on OHE version but usually "type_PAYMENT"
+    cols = X_transformed.columns.tolist()
+    assert any('type_' in col for col in cols)
+    
+    # Check if original 'type' string column is gone
+    assert 'type' not in X_transformed.columns
+    
+    # Check if numeric features are scaled (roughly) - hard to check exact values without manual math
+    # but we can check existence
+    assert 'amount' in X_transformed.columns
+    assert 'error_balance_orig' in X_transformed.columns
+
+def test_schema_validation(mock_data):
+    """Test that incoming data adheres to expected schema (types)."""
+    pipeline = DataPipeline()
+    df = pipeline.preprocess(mock_data)
+    
+    # Define expected schema
+    required_columns = {
+        'step': 'int', # or int64
+        'type': 'object', # string
+        'amount': 'float',
+        'name_orig': 'object',
+        'old_balance_org': 'float',
+        'new_balance_orig': 'float',
+        'name_dest': 'object',
+        'old_balance_dest': 'float',
+        'new_balance_dest': 'float'
+    }
+    
+    # Validate
+    for col, expected_type in required_columns.items():
+        assert col in df.columns, f"Missing column: {col}"
+        
+        # Simple type check
+        if expected_type == 'float':
+            assert pd.api.types.is_float_dtype(df[col]), f"Column {col} should be float"
+        elif expected_type == 'int':
+            assert pd.api.types.is_integer_dtype(df[col]), f"Column {col} should be int"
+        elif expected_type == 'object':
+            assert pd.api.types.is_string_dtype(df[col]) or pd.api.types.is_object_dtype(df[col]), f"Column {col} should be string/object"
 
 def test_model_training_and_prediction(mock_data):
     """Test model training and prediction flow."""
@@ -77,18 +132,14 @@ def test_model_training_and_prediction(mock_data):
     y = features_df['is_fraud']
     X = engineer.select_features(features_df)
     
-    # Fill NA if any (one-hot might introduce them if not careful, but here should be fine)
-    X = X.fillna(0)
-    
-    # Scale
-    X_scaled = engineer.fit_transform_scaler(X)
+    # Fit Transform
+    X_processed = engineer.fit_transform(X)
     
     # Train
-    model.train(X_scaled, y)
+    model.train(X_processed, y)
     
     # Predict
-    preds = model.predict(X_scaled)
+    preds = model.predict(X_processed)
     
     assert len(preds) == len(mock_data)
     assert all(p in [0, 1] for p in preds)
-

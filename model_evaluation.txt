@@ -1,0 +1,14 @@
+Model Performance Report (Imbalanced Test Set)
+              precision    recall  f1-score   support
+
+       Legit       1.00      0.94      0.97       270
+       Fraud       0.65      1.00      0.79        30
+
+    accuracy                           0.95       300
+   macro avg       0.83      0.97      0.88       300
+weighted avg       0.97      0.95      0.95       300
+
+Confusion Matrix
+[[254  16]
+ [  0  30]]
+AUPRC: 1.0000

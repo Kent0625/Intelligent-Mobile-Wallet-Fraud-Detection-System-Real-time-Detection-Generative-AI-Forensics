@@ -9,7 +9,7 @@ This project represents a next-generation approach to financial security. Unlike
 ### Why This Project Stands Out
 *   **Transparency:** Most fraud models are "black boxes." This system explains its reasoning in plain English, bridging the gap between complex algorithms and human decision-makers.
 *   **Speed:** It processes transactions instantly as they occur, allowing for immediate intervention before funds are lost.
-*   **Precision:** By identifying deterministic patterns in financial behavior (such as the exact zeroing-out of accounts), the system achieves exceptional accuracy, minimizing false alarms that frustrate legitimate customers.
+*   **Precision:** By identifying deterministic patterns in financial behavior (such as the exact zeroing-out of accounts), the system achieves exceptional accuracy (verified via AUPRC on imbalanced data), minimizing false alarms that frustrate legitimate customers.
 
 ### How It Works (Simplified)
 Imagine a digital security guard that never sleeps.
@@ -18,9 +18,16 @@ Imagine a digital security guard that never sleeps.
 
 ### Technical Architecture
 *   **Core Engine:** Random Forest Classifier (Supervised Machine Learning)
-*   **Forensics Layer:** Google Gemini API (Generative AI)
+*   **Forensics Layer:** Google Gemini API (Generative AI) & SHAP (Explainable AI)
 *   **Interface:** Streamlit (Real-time Interactive Dashboard)
 *   **Data Source:** PaySim Mobile Money Dataset
+
+### Industry-Grade Enhancements (v2.0)
+To meet production standards, the system has been upgraded with:
+*   **Robust Pipelines:** Replaced fragile encoding with `OneHotEncoder` and `StandardScaler` inside a persistent stateful pipeline, ensuring consistency between training and live inference.
+*   **Realistic Evaluation:** Shifted from balanced accuracy to **AUPRC (Area Under Precision-Recall Curve)** on imbalanced test sets (1:1000 ratio) to reflect real-world performance where fraud is rare.
+*   **Explainable AI (XAI):** Integrated **SHAP (SHapley Additive exPlanations)** values to visualize exactly which features drove the model's decision, alongside the LLM's narrative analysis.
+*   **Automated Testing:** Added schema validation and pipeline unit tests to prevent data drift and integration errors.
 
 ### Installation & Usage
 

@@ -10,7 +10,7 @@ class ForensicAgent:
             print("Warning: GEMINI_API_KEY not found. GenAI features will be disabled.")
             self.client = None
 
-    def analyze_transaction(self, transaction_data, is_fraud_pred):
+    def analyze_transaction(self, transaction_data, is_fraud_pred, feature_context=None):
         """
         Generates a forensic report for a transaction.
         """
@@ -19,15 +19,26 @@ class ForensicAgent:
 
         status = "SUSPICIOUS" if is_fraud_pred == 1 else "NORMAL"
         
+        # Format context for the prompt
+        context_str = ""
+        if feature_context:
+            context_str = "\nKey Risk Indicators (Engineered Features):\n"
+            for k, v in feature_context.items():
+                context_str += f"- {k}: {v}\n"
+        
         prompt = f"""
         You are a financial fraud forensics expert. 
         Analyze the following mobile wallet transaction which has been flagged as {status} by our ML system.
 
         Transaction Details:
         {transaction_data}
+        {context_str}
 
         Task:
-        1. Explain why this transaction might be considered {status} based on the values (e.g. huge amount, zero balance change, etc.).
+        1. Explain why this transaction might be considered {status} based on the values.
+           - Specifically look at the 'Key Risk Indicators' if provided.
+           - Large negative 'error_balance_orig' means money disappeared (theft).
+           - Large positive 'error_balance_dest' means money appeared (laundering).
         2. Provide a recommendation for the fraud analyst (e.g. "Call customer", "Block account", "Ignore").
         3. Keep it concise (under 100 words).
         """

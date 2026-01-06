@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import time
 import os
+import shap
+import matplotlib.pyplot as plt
 from data_pipeline import DataPipeline
 from feature_engineering import FeatureEngineer
 from fraud_model import FraudModel
@@ -27,18 +29,29 @@ def load_components():
     pipeline = DataPipeline()
     engineer = FeatureEngineer()
     model = FraudModel()
+    explainer = None
     
     # Try to load existing model
     if os.path.exists(Config.MODEL_PATH):
         try:
             model.load_model()
+            if engineer.load_state():
+                print("Feature Engineer state loaded.")
+            else:
+                print("Warning: Feature Engineer state not found.")
+            
+            # Initialize SHAP Explainer
+            # We use a background dataset for reference if possible, but for TreeExplainer on RF it's self-contained
+            # Using a small background sample can speed it up but TreeExplainer handles RF well.
+            explainer = shap.TreeExplainer(model.model)
+            print("SHAP Explainer initialized.")
         except Exception as e:
-            print(f"Could not load model: {e}")
+            print(f"Could not load model/explainer: {e}")
             
     agent = ForensicAgent()
-    return pipeline, engineer, model, agent
+    return pipeline, engineer, model, agent, explainer
 
-pipeline, engineer, model, agent = load_components()
+pipeline, engineer, model, agent, explainer = load_components()
 
 # Training Section
 if not os.path.exists(Config.MODEL_PATH):
@@ -47,19 +60,21 @@ if not os.path.exists(Config.MODEL_PATH):
         with st.spinner("Loading and Preprocessing Data..."):
             df = pipeline.load_data()
             if df is not None:
-                # Use a subset for speed in demo
+                # Use a subset for speed in demo but ensure it's balanced-ish or large enough
                 df_sample = df.sample(n=50000, random_state=42) 
                 df_clean = pipeline.preprocess(df_sample)
                 df_features = engineer.create_features(df_clean)
                 # Extract labels for Supervised Learning
                 y = df_features['is_fraud']
                 X = engineer.select_features(df_features)
-                X_scaled = engineer.fit_transform_scaler(X)
+                
+                # FIT and Transform
+                X_scaled = engineer.fit_transform(X)
                 
                 with st.spinner("Training Random Forest..."):
                     model.train(X_scaled, y)
                     model.save_model()
-                st.success("Model trained and saved!")
+                st.success("Model trained and saved! Please reload the app.")
             else:
                 st.error("Could not load data. Check path.")
 
@@ -84,13 +99,16 @@ if os.path.exists(Config.MODEL_PATH):
         # Stream logic
         streamer = TransactionStream()
         # Load a mix of fraud and non-fraud for demo
-        full_df = pd.read_csv(Config.DATA_PATH, nrows=10000) # Read chunk
-        # Hack to ensure we see some frauds in the stream
-        frauds = full_df[full_df['isFraud'] == 1].head(10)
-        normals = full_df[full_df['isFraud'] == 0].head(90)
-        demo_df = pd.concat([frauds, normals]).sample(frac=1).reset_index(drop=True)
-        
-        streamer.df = demo_df
+        try:
+            full_df = pd.read_csv(Config.DATA_PATH, nrows=10000) # Read chunk
+            # Hack to ensure we see some frauds in the stream
+            frauds = full_df[full_df['isFraud'] == 1].head(10)
+            normals = full_df[full_df['isFraud'] == 0].head(90)
+            demo_df = pd.concat([frauds, normals]).sample(frac=1).reset_index(drop=True)
+            streamer.df = demo_df
+        except:
+            st.error("Data file not found for simulation.")
+            st.stop()
         
         total_count = 0
         fraud_count = 0
@@ -105,11 +123,11 @@ if os.path.exists(Config.MODEL_PATH):
             tx_clean = pipeline.preprocess(tx_df)
             tx_features = engineer.create_features(tx_clean)
             
-            # Select features (this will keep only relevant ones, but might have extra/missing compared to train)
+            # Select features
             X_input = engineer.select_features(tx_features)
             
-            # Transform (handling alignment internally now)
-            X_scaled = engineer.transform_scaler(X_input)
+            # Transform (handling encoding/scaling safely)
+            X_scaled = engineer.transform(X_input)
             
             # Predict
             pred = model.predict(X_scaled)[0]
@@ -118,10 +136,47 @@ if os.path.exists(Config.MODEL_PATH):
             
             if pred == 1:
                 fraud_count += 1
+                
+                # Context for GenAI
+                context = {
+                    "error_balance_orig": tx_features['error_balance_orig'].iloc[0],
+                    "error_balance_dest": tx_features['error_balance_dest'].iloc[0],
+                    "amount": tx['amount']
+                }
+                
                 # Trigger Agent
                 with st.expander(f"🚨 ALERT: Transaction {tx['step']} Detected!", expanded=True):
-                    analysis = agent.analyze_transaction(tx, pred)
-                    st.write(analysis)
+                    col_gen, col_shap = st.columns([1, 1])
+                    
+                    with col_gen:
+                        st.markdown("### 🤖 GenAI Forensic Analysis")
+                        analysis = agent.analyze_transaction(tx, pred, feature_context=context)
+                        st.write(analysis)
+
+                    with col_shap:
+                        st.markdown("### 📊 SHAP Explainability")
+                        if explainer:
+                            try:
+                                # Calculate SHAP values for this instance
+                                # X_scaled is a DataFrame, so shap preserves feature names
+                                shap_values = explainer(X_scaled)
+                                
+                                # Check if shap_values has multiple class outputs (common for classifiers)
+                                # Shape is typically (n_samples, n_features, n_classes)
+                                if len(shap_values.shape) == 3:
+                                    # Select the explanation for the Fraud class (Index 1) for the first sample (Index 0)
+                                    explanation = shap_values[0, :, 1]
+                                else:
+                                    # Binary case or regression where only one output is returned
+                                    explanation = shap_values[0]
+
+                                # Waterfall plot
+                                fig, ax = plt.subplots()
+                                shap.plots.waterfall(explanation, show=False)
+                                st.pyplot(fig)
+                                plt.close(fig)
+                            except Exception as e:
+                                st.error(f"Could not generate SHAP plot: {e}")
             
             # Update metrics
             total_metric.metric("Transactions Processed", total_count)

@@ -3,7 +3,7 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, average_precision_score, precision_recall_curve
 from config import Config
 from data_pipeline import DataPipeline
 from feature_engineering import FeatureEngineer
@@ -14,59 +14,86 @@ def evaluate():
     pipeline = DataPipeline()
     engineer = FeatureEngineer()
     
-    # Load all data (or a large chunk)
+    # Load all data
     df = pipeline.load_data()
     if df is None:
         return
 
-    # Use a larger sample for meaningful evaluation, but keep it manageable
-    print("Sampling data for evaluation (200,000 records)...")
-    # Ensure we include frauds in the sample for valid testing
-    frauds = df[df['isFraud'] == 1]
-    non_frauds = df[df['isFraud'] == 0].sample(n=200000, random_state=42)
-    df_sample = pd.concat([frauds, non_frauds]).sample(frac=1, random_state=42).reset_index(drop=True)
-    
-    print(f"Sample shape: {df_sample.shape}")
-    print(f"Fraud count in sample: {df_sample['isFraud'].sum()}")
-
     print("Preprocessing and Feature Engineering...")
-    df_clean = pipeline.preprocess(df_sample)
+    df_clean = pipeline.preprocess(df)
     df_features = engineer.create_features(df_clean)
+    
+    # Select features (keeps 'type' and creates 'hour_of_day' later in transform)
     X = engineer.select_features(df_features)
-    y = df_sample['isFraud']
+    y = df_features['is_fraud']
 
-    # Split into Train and Validation sets
-    # Note: Isolation Forest is unsupervised, so we train on X_train (often mostly normal data)
-    # But here we just split to evaluate on unseen data.
-    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
+    # 1. Split into Train and Test (Hold-out) - Stratified to maintain ratio
+    # We use a large test set to capture rare fraud events
+    print("Splitting data (Train: 70%, Test: 30%)...")
+    X_train_raw, X_test_raw, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
+    
+    print(f"Train set shape: {X_train_raw.shape}")
+    print(f"Test set shape: {X_test_raw.shape}")
 
-    print("Scaling features...")
-    # Fit scaler on train, transform both
-    X_train_scaled = engineer.fit_transform_scaler(X_train)
-    X_val_scaled = engineer.transform_scaler(X_val)
+    # 2. Prepare Training Data (Downsampling Majority Class)
+    # We train on balanced data to help the model learn patterns
+    print("Balancing training data...")
+    train_data = pd.concat([X_train_raw, y_train], axis=1)
+    frauds = train_data[train_data['is_fraud'] == 1]
+    non_frauds = train_data[train_data['is_fraud'] == 0]
+    
+    # Downsample non-frauds to match frauds (or a multiple, e.g. 1:1 or 1:10)
+    # 1:1 balance is standard for initial training
+    non_frauds_downsampled = non_frauds.sample(n=len(frauds), random_state=42)
+    
+    train_balanced = pd.concat([frauds, non_frauds_downsampled]).sample(frac=1, random_state=42)
+    
+    X_train_balanced = train_balanced.drop('is_fraud', axis=1)
+    y_train_balanced = train_balanced['is_fraud']
+    
+    print(f"Balanced Training Data: {X_train_balanced.shape} (Fraud: {y_train_balanced.sum()})")
+
+    # 3. Fit Scaler/Encoder on BALANCED Train Data (or Raw Train Data? - Usually Raw is better for scaler stats, but balanced is faster)
+    # Let's fit on the balanced training set for this pipeline, as that's what the model sees.
+    print("Fitting Scaler/Encoder...")
+    X_train_processed = engineer.fit_transform(X_train_balanced)
+    
+    # 4. Transform Test Data (Imbalanced - Real world scenario)
+    print("Transforming Test Data...")
+    X_test_processed = engineer.transform(X_test_raw)
 
     print("Training Model (Random Forest)...")
     model = FraudModel()
-    model.train(X_train_scaled, y_train)
+    model.train(X_train_processed, y_train_balanced)
+    
+    # Save the trained model and engineer state
+    model.save_model()
 
-    print("Evaluating on Validation Set...")
+    print("Evaluating on Imbalanced Test Set (Real-world simulation)...")
     # Predict
-    y_pred = model.predict(X_val_scaled)
+    y_pred = model.predict(X_test_processed)
+    # Predict Proba for AUPRC
+    y_prob = model.model.predict_proba(X_test_processed)[:, 1]
 
     # Metrics
-    print("\n--- Model Performance Report ---")
-    print(classification_report(y_val, y_pred, target_names=['Legit', 'Fraud']))
+    print("\n--- Model Performance Report (Test Set) ---")
+    print(classification_report(y_test, y_pred, target_names=['Legit', 'Fraud']))
     
     print("\n--- Confusion Matrix ---")
-    cm = confusion_matrix(y_val, y_pred)
+    cm = confusion_matrix(y_test, y_pred)
     print(cm)
+    
+    # AUPRC
+    auprc = average_precision_score(y_test, y_prob)
+    print(f"\nArea Under Precision-Recall Curve (AUPRC): {auprc:.4f}")
 
     # Save metrics to file
     with open("model_evaluation.txt", "w") as f:
-        f.write("Model Performance Report\n")
-        f.write(classification_report(y_val, y_pred, target_names=['Legit', 'Fraud']))
+        f.write("Model Performance Report (Imbalanced Test Set)\n")
+        f.write(classification_report(y_test, y_pred, target_names=['Legit', 'Fraud']))
         f.write("\nConfusion Matrix\n")
         f.write(str(cm))
+        f.write(f"\nAUPRC: {auprc:.4f}\n")
     
     print("\nEvaluation complete. Results saved to model_evaluation.txt")
 
