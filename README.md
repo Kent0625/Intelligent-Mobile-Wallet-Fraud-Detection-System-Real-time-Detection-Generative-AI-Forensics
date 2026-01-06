@@ -1,6 +1,8 @@
 # Intelligent Mobile Wallet Fraud Detection System
 ## Real-time Detection & Generative AI Forensics
 
+![Dashboard Preview](dashboard_preview.png)
+
 ### Executive Summary
 This project represents a next-generation approach to financial security. Unlike traditional systems that simply flag transactions as "suspicious" or "safe" without context, this system integrates two powerful technologies:
 1.  **Machine Learning** to detect complex fraud patterns in real-time with high precision.
@@ -18,7 +20,7 @@ Imagine a digital security guard that never sleeps.
 
 ### Technical Architecture
 *   **Core Engine:** Random Forest Classifier (Supervised Machine Learning)
-*   **Forensics Layer:** Google Gemini API (Generative AI) & SHAP (Explainable AI)
+*   **Forensics Layer:** Hugging Face Inference API (Generative AI) & SHAP (Explainable AI)
 *   **Interface:** Streamlit (Real-time Interactive Dashboard)
 *   **Data Source:** PaySim Mobile Money Dataset
 
@@ -37,9 +39,9 @@ To meet production standards, the system has been upgraded with:
     ```
 
 2.  **Configuration**
-    Create a file named `.env` and add your Google Gemini API Key:
+    Create a file named `.env` and add your Hugging Face Token:
     ```
-    GEMINI_API_KEY=your_api_key_here
+    HF_TOKEN=your_token_here
     ```
 
 3.  **Run the Dashboard**

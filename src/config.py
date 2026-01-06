@@ -11,6 +11,6 @@ class Config:
     PROCESSED_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "processed")
     MODEL_PATH = os.path.join(PROJECT_ROOT, "models", "fraud_detector.pkl")
     SCALER_PATH = os.path.join(PROJECT_ROOT, "models", "scaler.pkl")
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    HF_TOKEN = os.getenv("HF_TOKEN")
     RANDOM_STATE = 42
     CONTAMINATION = 0.002 # Approximate fraud rate in dataset

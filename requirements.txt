@@ -3,7 +3,7 @@ pandas
 numpy
 scikit-learn
 streamlit
-google-generativeai
+huggingface_hub
 python-dotenv
 matplotlib
 seaborn

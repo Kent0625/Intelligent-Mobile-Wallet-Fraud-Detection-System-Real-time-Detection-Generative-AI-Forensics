@@ -1,56 +1,58 @@
-from google import genai
+from huggingface_hub import InferenceClient
 from config import Config
 
 class ForensicAgent:
     def __init__(self):
-        if Config.GEMINI_API_KEY:
-            self.client = genai.Client(api_key=Config.GEMINI_API_KEY)
-            self.model_id = "gemini-2.0-flash"
+        # Use Hugging Face Inference API (Free Tier)
+        # Qwen 2.5 is robust and widely supported on the free tier
+        self.model_id = "Qwen/Qwen2.5-7B-Instruct" 
+        
+        if Config.HF_TOKEN:
+            self.client = InferenceClient(model=self.model_id, token=Config.HF_TOKEN)
         else:
-            print("Warning: GEMINI_API_KEY not found. GenAI features will be disabled.")
+            print("Warning: HF_TOKEN not found. GenAI features will be disabled.")
             self.client = None
 
     def analyze_transaction(self, transaction_data, is_fraud_pred, feature_context=None):
         """
-        Generates a forensic report for a transaction.
+        Generates a forensic report using HF Chat Completion API (Conversational).
         """
         if not self.client:
-            return "GenAI Analysis Unavailable (Missing API Key)."
+            return "GenAI Analysis Unavailable (Missing HF_TOKEN)."
 
         status = "SUSPICIOUS" if is_fraud_pred == 1 else "NORMAL"
         
-        # Format context for the prompt
+        # Format context
         context_str = ""
         if feature_context:
-            context_str = "\nKey Risk Indicators (Engineered Features):\n"
+            context_str = "\nKey Risk Indicators:\n"
             for k, v in feature_context.items():
                 context_str += f"- {k}: {v}\n"
         
-        prompt = f"""
-        You are a financial fraud forensics expert. 
-        Analyze the following mobile wallet transaction which has been flagged as {status} by our ML system.
+        # Prompt content
+        user_content = f"""You are a financial fraud forensics expert. 
+Analyze this transaction flagged as {status}.
 
-        Transaction Details:
-        {transaction_data}
-        {context_str}
+Transaction Details:
+{transaction_data}
+{context_str}
 
-        Task:
-        1. Explain why this transaction might be considered {status} based on the values.
-           - Specifically look at the 'Key Risk Indicators' if provided.
-           - Large negative 'error_balance_orig' means money disappeared (theft).
-           - Large positive 'error_balance_dest' means money appeared (laundering).
-        2. Provide a recommendation for the fraud analyst (e.g. "Call customer", "Block account", "Ignore").
-        3. Keep it concise (under 100 words).
-        """
+Task:
+1. Explain why it is {status} (e.g. theft if error_balance_orig < 0).
+2. Recommend action (Block/Call/Ignore).
+3. Be extremely concise (max 50 words)."""
+
+        messages = [
+            {"role": "user", "content": user_content}
+        ]
 
         try:
-            response = self.client.models.generate_content(
-                model=self.model_id,
-                contents=prompt
+            # Use chat_completion for Instruct/Chat models
+            response = self.client.chat_completion(
+                messages,
+                max_tokens=150,
+                temperature=0.5
             )
-            return response.text
+            return response.choices[0].message.content.strip()
         except Exception as e:
-            error_str = str(e)
-            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-                return "⚠️ Analysis Skipped: API Rate Limit Reached. (Free tier quota exceeded)"
-            return f"Error generating analysis: {e}"
+            return f"⚠️ Analysis Error: {str(e)}"
