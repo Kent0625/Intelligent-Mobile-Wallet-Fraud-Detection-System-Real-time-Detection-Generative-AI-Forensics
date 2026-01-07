@@ -53,12 +53,15 @@ def evaluate():
     
     print(f"Balanced Training Data: {X_train_balanced.shape} (Fraud: {y_train_balanced.sum()})")
 
-    # 3. Fit Scaler/Encoder on BALANCED Train Data (or Raw Train Data? - Usually Raw is better for scaler stats, but balanced is faster)
-    # Let's fit on the balanced training set for this pipeline, as that's what the model sees.
-    print("Fitting Scaler/Encoder...")
-    X_train_processed = engineer.fit_transform(X_train_balanced)
+    # 3. Fit Scaler/Encoder on RAW Training Data (The "True" Distribution)
+    print("Fitting Scaler/Encoder on True Distribution...")
+    engineer.fit(X_train_raw)  # Fit on Imbalanced
+
+    # 4. Transform the Balanced Data for the Model
+    print("Transforming Balanced Training Data...")
+    X_train_processed = engineer.transform(X_train_balanced) # Transform Balanced
     
-    # 4. Transform Test Data (Imbalanced - Real world scenario)
+    # 5. Transform Test Data (Imbalanced - Real world scenario)
     print("Transforming Test Data...")
     X_test_processed = engineer.transform(X_test_raw)
 

@@ -108,14 +108,36 @@ if os.path.exists(Config.MODEL_PATH):
         
         # Stream logic
         streamer = TransactionStream()
-        try:
-            full_df = pd.read_csv(Config.DATA_PATH, nrows=10000) 
-            frauds = full_df[full_df['isFraud'] == 1].head(10)
-            normals = full_df[full_df['isFraud'] == 0].head(90)
-            demo_df = pd.concat([frauds, normals]).sample(frac=1).reset_index(drop=True)
-            streamer.df = demo_df
-        except:
-            st.error("Data file not found for simulation.")
+        
+        # Load data (Real or Synthetic Fallback)
+        full_df = pipeline.load_data()
+        
+        if full_df is not None:
+            # Ensure we have both classes for a good demo mix
+            if 'isFraud' in full_df.columns:
+                 # Raw data (synthetic or real) has 'isFraud'
+                 fraud_col = 'isFraud'
+            elif 'is_fraud' in full_df.columns:
+                 # Preprocessed might have 'is_fraud'
+                 fraud_col = 'is_fraud'
+            else:
+                 fraud_col = None
+
+            if fraud_col:
+                frauds = full_df[full_df[fraud_col] == 1].head(10)
+                normals = full_df[full_df[fraud_col] == 0].head(90)
+                
+                # If synthetic generator didn't produce enough of one class, just use what we have
+                if len(frauds) < 10:
+                    frauds = full_df[full_df[fraud_col] == 1]
+                
+                demo_df = pd.concat([frauds, normals]).sample(frac=1).reset_index(drop=True)
+                streamer.df = demo_df
+            else:
+                st.warning("Data schema mismatch. Streaming raw data.")
+                streamer.df = full_df.head(100)
+        else:
+            st.error("Could not generate or load data.")
             st.stop()
         
         total_count = 0
